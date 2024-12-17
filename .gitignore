@@ -6,3 +6,4 @@ Logs.log
 config.ini
 .credentials
 .DS_Store
+.env

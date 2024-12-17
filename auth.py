@@ -1,31 +1,23 @@
 from __future__ import print_function
 import os
-import configparser
-
-config_data = configparser.ConfigParser()
-config_data.read("config.ini")
-
-aws_s3 = config_data["aws_s3"]
-gdrive = config_data["gdrive"]
-
-from googleapiclient import discovery
-from oauth2client import client
-from oauth2client import tools
+import logging
+from oauth2client import client, tools
 from oauth2client.file import Storage
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s", filename="migration.log", filemode="a")
 
 try:
     import argparse
     flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
 except ImportError:
     flags = None
-
-
+    
 class auth:
-    def __init__(self,SCOPES,CLIENT_SECRET_FILE,APPLICATION_NAME): # Inititalize the values which will remain constant
-        self.SCOPES = gdrive.get("scopes")
-        self.CLIENT_SECRET_FILE = gdrive.get("client_secret_file")
-        self.APPLICATION_NAME = gdrive.get("application_name")
-        
+    def __init__(self, SCOPES, CLIENT_SECRET_FILE, APPLICATION_NAME):
+        self.SCOPES = SCOPES
+        self.CLIENT_SECRET_FILE = CLIENT_SECRET_FILE
+        self.APPLICATION_NAME = APPLICATION_NAME
+
     def getCredentials(self):
         """Gets valid user credentials from storage.
 

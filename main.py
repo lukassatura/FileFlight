@@ -1,8 +1,12 @@
 from __future__ import print_function
 import httplib2
-import os
 import io
 import configparser
+
+from googleapiclient import discovery
+from googleapiclient.http import MediaIoBaseDownload
+
+import auth
 
 config_data = configparser.ConfigParser()
 config_data.read("config.ini")
@@ -10,14 +14,6 @@ config_data.read("config.ini")
 aws_s3 = config_data["aws_s3"]
 gdrive = config_data["gdrive"]
 
-from googleapiclient import discovery
-from googleapiclient.discovery import build
-from oauth2client import client
-from oauth2client import tools
-from oauth2client.file import Storage
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-
-import auth
 
 def service_return():    
     # If modifying these scopes, delete your previously saved credentials
@@ -33,7 +29,8 @@ def service_return():
     drive_service = discovery.build('drive', 'v3', http=http)
     return drive_service
 
-def downloadFile(file_id,filepath):
+
+def downloadFile(file_id, filepath):
     drive_service = service_return()
 
     request = drive_service.files().get_media(fileId=file_id)
@@ -50,14 +47,41 @@ def downloadFile(file_id,filepath):
         f.write(fh.read())'''
 
 
-def get_fileID(folder_id):
+def get_fileID_with_prefix(folder_id, prefix=""):
+    """
+    Recursively retrieves files and their paths from Google Drive.
+
+    Args:
+        folder_id (str): The ID of the Google Drive folder to scan.
+        prefix (str): The prefix path for the current folder (used for recursion).
+
+    Returns:
+        list: A list of dictionaries with file details (name, id, path).
+    """
     drive_service = service_return()
+    files = []
 
     page_token = None
-    files = []
     while True:
-        results = drive_service.files().list(q=f"'{folder_id}' in parents",spaces='drive',fields='nextPageToken, files(id, name, mimeType)',pageToken=page_token).execute()
-        files.extend(results['files'])
+        results = drive_service.files().list(
+            q=f"'{folder_id}' in parents",
+            spaces='drive',
+            fields='nextPageToken, files(id, name, mimeType)',
+            pageToken=page_token
+        ).execute()
+        
+        for file in results['files']:
+            file_id = file['id']
+            file_name = file['name']
+            mime_type = file['mimeType']
+
+            if mime_type == 'application/vnd.google-apps.folder':
+                # Recursively retrieve files from subfolders
+                files.extend(get_fileID_with_prefix(file_id, prefix + file_name + "/"))
+            else:
+                # Add file with its full path as the key
+                files.append({"id": file_id, "name": file_name, "path": prefix + file_name})
+
         page_token = results.get('nextPageToken')
         if not page_token:
             break
