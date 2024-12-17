@@ -1,95 +1,78 @@
-from __future__ import print_function
 import httplib2
 import io
+import logging
 import configparser
 
 from googleapiclient import discovery
 from googleapiclient.http import MediaIoBaseDownload
 
-import auth
+from auth import Auth
 
-config_data = configparser.ConfigParser()
-config_data.read("config.ini")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-aws_s3 = config_data["aws_s3"]
-gdrive = config_data["gdrive"]
+class GoogleDriveService:
+    """Handles Google Drive API interactions."""
 
+    def __init__(self, config_file="config.ini"):
+        self.config_data = configparser.ConfigParser()
+        self.config_data.read(config_file)
+        self.drive_service = self._initialize_service()
 
-def service_return():    
-    # If modifying these scopes, delete your previously saved credentials
-    # at ~/.credentials/drive-python-quickstart.json
-    SCOPES = gdrive.get("scopes")
-    CLIENT_SECRET_FILE = gdrive.get("client_secret_file")
-    APPLICATION_NAME = gdrive.get("application_name")
+    def _initialize_service(self):
+        """Initialize Google Drive API service."""
+        gdrive = self.config_data["gdrive"]
+        auth_instance = Auth(
+            scopes=gdrive.get("scopes"),
+            client_secret_file=gdrive.get("client_secret_file"),
+            application_name=gdrive.get("application_name")
+        )
+        credentials = auth_instance.get_credentials()
+        http = credentials.authorize(httplib2.Http())
+        return discovery.build("drive", "v3", http=http)
 
-    authInst = auth.auth(SCOPES,CLIENT_SECRET_FILE,APPLICATION_NAME)
-    credentials = authInst.getCredentials()
+    def download_file(self, file_id, filepath):
+        """Download a file from Google Drive to the specified local filepath."""
+        request = self.drive_service.files().get_media(fileId=file_id)
+        with io.FileIO(filepath, "wb") as fh:
+            downloader = MediaIoBaseDownload(fh, request)
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                logging.info(f"Download {int(status.progress() * 100)}% complete.")
 
-    http = credentials.authorize(httplib2.Http())
-    drive_service = discovery.build('drive', 'v3', http=http)
-    return drive_service
+    def list_files_in_folder(self, folder_id, prefix=""):
+        """Recursively list all files in a Google Drive folder."""
+        files = []
+        page_token = None
 
+        while True:
+            response = self.drive_service.files().list(
+                q=f"'{folder_id}' in parents",
+                spaces="drive",
+                fields="nextPageToken, files(id, name, mimeType)",
+                pageToken=page_token
+            ).execute()
 
-def downloadFile(file_id, filepath):
-    drive_service = service_return()
+            for file in response["files"]:
+                file_id = file["id"]
+                file_name = file["name"]
+                mime_type = file["mimeType"]
 
-    request = drive_service.files().get_media(fileId=file_id)
-    fh = io.BytesIO()
-    
-    downloader = MediaIoBaseDownload(fh, request)
-    return downloader
-    '''done = False
-    while done is False:
-        status, done = downloader.next_chunk()
-        print("Download %d%%." % int(status.progress() * 100))
-    with io.open(filepath,'wb') as f:
-        fh.seek(0)
-        f.write(fh.read())'''
+                if mime_type == "application/vnd.google-apps.folder":
+                    files.extend(self.list_files_in_folder(file_id, prefix + file_name + "/"))
+                else:
+                    files.append({"id": file_id, "name": file_name, "path": prefix + file_name})
 
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
 
-def get_fileID_with_prefix(folder_id, prefix=""):
-    """
-    Recursively retrieves files and their paths from Google Drive.
+        return files
 
-    Args:
-        folder_id (str): The ID of the Google Drive folder to scan.
-        prefix (str): The prefix path for the current folder (used for recursion).
+if __name__ == "__main__":
+    drive_service = GoogleDriveService()
+    folder_id = drive_service.config_data["gdrive"].get("folder_id")
+    files = drive_service.list_files_in_folder(folder_id)
 
-    Returns:
-        list: A list of dictionaries with file details (name, id, path).
-    """
-    drive_service = service_return()
-    files = []
-
-    page_token = None
-    while True:
-        results = drive_service.files().list(
-            q=f"'{folder_id}' in parents",
-            spaces='drive',
-            fields='nextPageToken, files(id, name, mimeType)',
-            pageToken=page_token
-        ).execute()
-        
-        for file in results['files']:
-            file_id = file['id']
-            file_name = file['name']
-            mime_type = file['mimeType']
-
-            if mime_type == 'application/vnd.google-apps.folder':
-                # Recursively retrieve files from subfolders
-                files.extend(get_fileID_with_prefix(file_id, prefix + file_name + "/"))
-            else:
-                # Add file with its full path as the key
-                files.append({"id": file_id, "name": file_name, "path": prefix + file_name})
-
-        page_token = results.get('nextPageToken')
-        if not page_token:
-            break
-
-    return files # return file detail
-
-    '''print(files)
     for file in files:
-        file_id = file['id']
-        file_name = file['name']
-        downloadFile(file_id,"GDrive/"+file_name)'''
+        logging.info(f"Found file: {file['path']} with ID: {file['id']}")

@@ -1,6 +1,6 @@
-from __future__ import print_function
 import os
 import logging
+
 from oauth2client import client, tools
 from oauth2client.file import Storage
 
@@ -11,39 +11,33 @@ try:
     flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
 except ImportError:
     flags = None
-    
-class auth:
-    def __init__(self, SCOPES, CLIENT_SECRET_FILE, APPLICATION_NAME):
-        self.SCOPES = SCOPES
-        self.CLIENT_SECRET_FILE = CLIENT_SECRET_FILE
-        self.APPLICATION_NAME = APPLICATION_NAME
 
-    def getCredentials(self):
-        """Gets valid user credentials from storage.
+class Auth:
+    """Handles Google Drive OAuth2 authentication."""
 
-        If nothing has been stored, or if the stored credentials are invalid,
-        the OAuth2 flow is completed to obtain the new credentials.
+    def __init__(self, scopes, client_secret_file, application_name):
+        self.scopes = scopes
+        self.client_secret_file = client_secret_file
+        self.application_name = application_name
+
+    def get_credentials(self):
+        """
+        Retrieves valid user credentials from storage or generates new ones via OAuth2 flow.
 
         Returns:
-            Credentials, the obtained credential.
+            credentials: The obtained credentials object.
         """
-        cwd_dir = os.getcwd() 
-        credential_dir = os.path.join(cwd_dir, '.credentials') # Creating Sub-directory .credentials where api credentials will be stored
-        
-        if not os.path.exists(credential_dir):
-            os.makedirs(credential_dir)
-        credential_path = os.path.join(credential_dir,
-                                    'google-drive-credentials.json')
+        credential_dir = os.path.join(os.getcwd(), '.credentials')
+        os.makedirs(credential_dir, exist_ok=True)
+        credential_path = os.path.join(credential_dir, 'google-drive-credentials.json')
 
         store = Storage(credential_path)
-        credentials = store.get() # get credentials from folder
+        credentials = store.get()
         
         if not credentials or credentials.invalid:
-            flow = client.flow_from_clientsecrets(self.CLIENT_SECRET_FILE, self.SCOPES) 
-            flow.user_agent = self.APPLICATION_NAME
-            if flags:
-                credentials = tools.run_flow(flow, store, flags)
-            else: # Needed only for compatibility with Python 2.6
-                credentials = tools.run(flow, store)
-            print('Storing credentials to ' + credential_path)
+            flow = client.flow_from_clientsecrets(self.client_secret_file, self.scopes)
+            flow.user_agent = self.application_name
+            credentials = tools.run_flow(flow, store, flags) if flags else tools.run(flow, store)
+            print(f'Storing credentials to {credential_path}')
+        
         return credentials
